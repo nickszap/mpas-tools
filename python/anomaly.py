@@ -8,6 +8,8 @@ import conn
 import output_data
 import plotPython
 
+gref = 980. #big scope so accessible
+
 def calc_dGravity_height(lat, z):
   #for lat in radians, z in meters,
   #return gravity adjustment for height, cm/s^2
@@ -18,12 +20,11 @@ def calc_dGravity_height(lat, z):
 def calc_geopotential(lat, z):
   cos2phi = np.cos(2*lat)
   g0 = 980.6160*(1-0.0026373*cos2phi+0.0000059*cos2phi*cos2phi)
-  gref = 980.
-  dz = 50.
-  zRange = np.arange(0.,z+dz/2,dz)
-  nSteps = len(zRange)
-  if (nSteps<2):
-    return g0*z/gref
+  #gref = 980.
+  
+  #discretize height and integrate
+  nSteps = 31
+  zRange, dz = np.linspace(0., z, num=nSteps, endpoint=True, retstep=True)
   
   #else, perform integration
   sum_gdz = 0.
@@ -55,7 +56,8 @@ def makeMap_ll2mpas(latSrc, lonSrc, latDest, lonDest, nEdgesOnCell, cellsOnCell)
       pt_ll[0] = latSrc[iLat]
       pt_ll[1] = lonSrc[iLon]
       
-      cellId=conn.findOwner_horizNbrs_latLon(pt_ll, cellId, latDest, lonDest, nEdgesOnCell, cellsOnCell)
+      #cellId=conn.findOwner_horizNbrs_latLon(pt_ll, cellId, latDest, lonDest, nEdgesOnCell, cellsOnCell)
+      cellId=conn.findOwner_horizNbrs_latLon_storeDistance(pt_ll, cellId, latDest, lonDest, nEdgesOnCell, cellsOnCell)
       llMap[iLat,iLon] = cellId
       
   return llMap
@@ -92,7 +94,7 @@ def test_run_hgt():
   #mpas files
   #fnames = []
   fnames = sorted(glob.glob('/arctic1/nick/cases/vduda/x4/x4.t.output.2006-08-*'))
-  #fnames.extend(sorted(glob.glob('/arctic1/nick/cases/vduda/x4.t.output.2006-08-15*')))
+  fnames.extend(sorted(glob.glob('/arctic1/nick/cases/vduda/x4.t.output.2006-08-15*')))
   #fnames = sorted(glob.glob('/arctic1/nick/cases/vduda/x4/*.output.2006-08*'))
   counter = 0
   for iFile, fpath in enumerate(fnames):
@@ -101,18 +103,23 @@ def test_run_hgt():
     cellsOnCell = data.variables['cellsOnCell'][:]-1;
     latCell = data.variables['latCell'][:];
     lonCell = data.variables['lonCell'][:];
-    nCells = len(latCell)
     nTimes = len(data.dimensions['Time'])
-    nTimes = 3
+    #nTimes = 1 #3
     
-    llMap = makeMap_ll2mpas(latMean, lonMean, latCell, lonCell, nEdgesOnCell, cellsOnCell)
+    nCells = len(latCell)
+    geop_mpas = np.zeros(nCells,dtype=float)
     
     for iTime in xrange(nTimes):
+      #get average value for mesh over these times so can even anomaly different meshes together
       output_data.print_xtime(data, iTime)
       hgt_mpas = data.variables['height_500hPa'][iTime,:]
-      geop_mpas = mpas_hgt2geopotential(nCells, hgt_mpas, latCell)
-      var += calc_diff_field(hgtMean, geop_mpas, llMap, nlat, nlon)
-      counter = counter+1
+      #average here to avoid summing to large number over many times
+      geop_mpas += mpas_hgt2geopotential(nCells, hgt_mpas, latCell)/nTimes
+      
+    llMap = makeMap_ll2mpas(latMean, lonMean, latCell, lonCell, nEdgesOnCell, cellsOnCell)
+    var += calc_diff_field(hgtMean, geop_mpas, llMap, nlat, nlon)
+    #print var
+    counter = counter+1
     
     data.close()
     
@@ -120,7 +127,9 @@ def test_run_hgt():
   #var = hgtMean
   # add wrap-around point in longitude.
   var, lonMean = addcyclic(var, lonMean)
+  np.savez('tmp.dat',var,latMean,lonMean)
   lats,lons = np.meshgrid(latMean, lonMean)
+  lats *= 180./np.pi; lons *= 180./np.pi
   plot_anomaly_ll(lats, lons, np.transpose(var))
 
 def test_plot():
@@ -232,25 +241,29 @@ def netVorticity_cells(verts, vortVertex, areaTri):
   netArea = np.sum(areaTri[verts])
   return netCirc/netArea
 
-def plot_anomaly_ll(lat, lon, var):  
-  #map = Basemap(projection='ortho',lon_0=100,lat_0=60, resolution='l')
-  map = Basemap(projection='ortho',lon_0=0,lat_0=90, resolution='l')
-  x,y = map(lon, lat)
+def plot_anomaly_ll(lat, lon, var):
+  #Input lat and lon in degrees!!!
+  plt.figure()
   
-  fig1 = plt.figure(1)
-  map.drawcoastlines()
-  map.drawmapboundary()
+  #m = Basemap(projection='ortho',lon_0=100,lat_0=60, resolution='l')
+  m = Basemap(projection='ortho',lon_0=0,lat_0=90, resolution='l')
+  x,y = m(lon, lat)
   
-  '''
+  m.drawcoastlines()
+  m.drawmapboundary()
+  
+  #'''
   #set bounds on var
   maxVal = 100.; minVal = -100.
   var[var>maxVal] = maxVal
   var[var<minVal] = minVal
-  '''
+  #'''
   
-  map.pcolor(x,y,var,shading='flat',edgecolors='none',cmap=plt.cm.jet) #cmap=plt.cm.hot_r) #,vmin=100,vmax=1000)
-  #map.contour(x,y,var,10,tri=True,shading='flat',edgecolors='none',cmap=plt.cm.jet)
-  #map.contourf(x,y,var,10,tri=True,shading='flat',edgecolors='none',cmap=plt.cm.jet)
+  m.pcolor(x,y,var,shading='flat',edgecolors='none',cmap=plt.cm.jet) #cmap=plt.cm.hot_r) #,vmin=100,vmax=1000)
+  #m.contour(x,y,var,10,tri=True,shading='flat',edgecolors='none',cmap=plt.cm.jet)
+  #m.contourf(x,y,var,10,tri=True,shading='flat',edgecolors='none',cmap=plt.cm.jet)
+  #cbar = m.colorbar(plt1,location='bottom',pad="5%")
+  #cbar.set_label('\Delta m')
   plt.colorbar()
   plt.show()
 
