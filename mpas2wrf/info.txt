@@ -1,0 +1,6 @@
+Leveraging NCL's interface to ESMF regridding:
+http://www.ncl.ucar.edu/Applications/ESMF.shtml
+
+http://www.ncl.ucar.edu/Applications/Scripts/ESMF_all_10.ncl
+http://www.ncl.ucar.edu/Document/Functions/ESMF/curvilinear_to_SCRIP.shtml
+http://www.ncl.ucar.edu/Applications/Scripts/ESMF_wgts_29.ncl
