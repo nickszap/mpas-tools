@@ -13,14 +13,14 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/esmf/ESMF_regridding.ncl"
     
 ; User options -----------------------
     InterpMethod= "patch"
-    ;existing files
+    ;files w/ coordinate info
     mpasPath = "mpas.nc"
     wrfPath = "wrfout_d01_2003-07-13_12:00:00.UV.nc"
     
     ;files we'll make
     srcGridName = "MPAS_ESMF.nc"
-    dstGridName = "World_0.25deg_SCRIP.nc"
-    wgtFile     = "MPAS_2_World.nc"
+    dstGridName = "wrf_scrip.nc"
+    wgtFile     = "MPAS_2_WRF.nc"
 
     ;set to True if you want to skip any of these steps
     SKIP_mpas_GEN  = False
@@ -28,34 +28,46 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/esmf/ESMF_regridding.ncl"
     SKIP_WGT_GEN   = False
 ; end user options -----------------------
 
+  if(.not. SKIP_mpas_GEN) then
 ;----------------------------------------------------------------------
-; Convert MPAS to unstructured ESMF file.
+; MPAS to unstructured ESMF file.
 ;----------------------------------------------------------------------
-
-;---Retrieve cell centers
-    sfile   = addfile(srcFileName,"r")
-    lonCell = sfile->lonCell
-    latCell = sfile->latCell
-
-;---Convert to degrees from radians
+    ;cell center coordinates
+    data   = addfile(mpasPath,"r")
+    lonCell = data->lonCell
+    latCell = data->latCell
+    ;In degrees (from radians)
     r2d     = 180.0d/(atan(1)*4.0d)  ; Radian to Degree
     lonCell = lonCell*r2d
     latCell = latCell*r2d
+    
+    ;Set some Options
+    Opt                = True
+    Opt@ForceOverwrite = True
+    Opt@PrintTimings   = True
+    Opt@InputFileName  = wrfPath
+    Opt@Debug          = True
+    
+    unstructured_to_ESMF(srcGridName,latCell,lonCell,Opt)
+    
+    delete(Opt)
+  end if ;SKIP_mpas_GEN
 
-    if(.not.SKIP_ESMF_GEN) then
-;---Set some Options
-      Opt                = True
-      Opt@ForceOverwrite = True
-      Opt@PrintTimings   = True
-      Opt@InputFileName  = srcFileName
-      Opt@Debug          = True
+ if(.not. SKIP_wrf_GEN) then
+;----------------------------------------------------------------------
+; WRF (curvilinear) to scrip file.
+;----------------------------------------------------------------------
+    ;cell center coordinates
+    
+    ;Set some Options
+    Opt                = True
+    Opt@ForceOverwrite = True
+    Opt@PrintTimings   = True
+    Opt@InputFileName  = mpasPath
+    Opt@Debug          = True
 
-      unstructured_to_ESMF(srcGridName,latCell,lonCell,Opt)
-
-;---Clean up
-      delete(Opt)
-    end if
-
+ end if ;SKIP_mpas_GEN
+ 
 ;---Retrieve either one level, or all levels. Use '-1' for all.
     sfile = addfile(srcFilePath,"r")
 
